@@ -1,0 +1,87 @@
+# ReviewIQ local stack. Bring up infra + API with:  make up   (or docker compose up)
+# Services activate phase-by-phase; `worker` and `frontend` are enabled later.
+name: reviewiq
+
+services:
+  # ── PostgreSQL: system of record (users, repos, PRs, reviews, jobs) ──────
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-reviewiq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-reviewiq}
+      POSTGRES_DB: ${POSTGRES_DB:-reviewiq}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-reviewiq}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Redis: Celery broker + result backend, and app-level cache ──────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Qdrant: vector database for semantic code search & RAG retrieval ────
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333" # REST/gRPC HTTP
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrantdata:/qdrant/storage
+
+  # ── FastAPI application ─────────────────────────────────────────────────
+  api:
+    build: ./backend
+    env_file: .env
+    # In-container hostnames override the localhost defaults from .env.
+    environment:
+      POSTGRES_HOST: db
+      REDIS_HOST: redis
+      QDRANT_HOST: qdrant
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+
+  # ── Celery worker (enabled in Phase 4) ──────────────────────────────────
+  # worker:
+  #   build: ./backend
+  #   command: uv run celery -A app.workers.celery_app worker --loglevel=info
+  #   env_file: .env
+  #   environment:
+  #     POSTGRES_HOST: db
+  #     REDIS_HOST: redis
+  #     QDRANT_HOST: qdrant
+  #   depends_on:
+  #     - db
+  #     - redis
+  #     - qdrant
+
+  # ── Frontend (enabled in Phase 8; in dev we usually run Vite on the host) ─
+  # frontend:
+  #   build: ./frontend
+  #   ports:
+  #     - "5173:5173"
+  #   depends_on:
+  #     - api
+
+volumes:
+  pgdata:
+  qdrantdata:

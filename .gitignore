@@ -1,0 +1,44 @@
+# ─────────────────────────────────────────────────────────────────────────
+# ReviewIQ .gitignore
+# ─────────────────────────────────────────────────────────────────────────
+
+# 🔒 LOCAL-ONLY: interview prep + private project notes. NEVER commit these.
+interview-notes/
+*.local.md
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# Docker / data volumes (if bind-mounted locally)
+pgdata/
+qdrant_storage/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
