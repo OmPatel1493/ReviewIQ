@@ -6,7 +6,15 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Boolean, Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,7 +52,7 @@ class Repository(UUIDMixin, TimestampMixin, Base):
     index_status: Mapped[IndexStatus] = mapped_column(
         Enum(IndexStatus, name="index_status"), default=IndexStatus.PENDING, index=True
     )
-    indexed_at: Mapped[datetime | None] = mapped_column()
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # --- relationships ---
     owner: Mapped[User] = relationship(back_populates="repositories")

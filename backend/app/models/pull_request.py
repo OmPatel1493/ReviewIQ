@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     BigInteger,
+    DateTime,
     Enum,
     ForeignKey,
     Integer,
@@ -61,8 +62,8 @@ class PullRequest(UUIDMixin, TimestampMixin, Base):
     html_url: Mapped[str] = mapped_column(String(1024))
 
     # Timestamps reported by GitHub (distinct from our own audit timestamps).
-    gh_created_at: Mapped[datetime | None] = mapped_column()
-    gh_updated_at: Mapped[datetime | None] = mapped_column()
+    gh_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    gh_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # --- relationships ---
     repository: Mapped[Repository] = relationship(back_populates="pull_requests")
