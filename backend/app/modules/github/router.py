@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 from app.models import User
+from app.models.enums import JobType
 from app.modules.auth.dependencies import get_current_user
 from app.modules.github.client import GitHubAPIError
 from app.modules.github.service import (
@@ -16,12 +17,15 @@ from app.modules.github.service import (
     RepositoryAccessError,
     RepositoryNotFoundError,
 )
+from app.repositories.job_repository import JobRepository
+from app.schemas.job import JobOut
 from app.schemas.pull_request import ChangedFileOut, PullRequestOut
 from app.schemas.repository import (
     ConnectRepositoryRequest,
     GitHubRepoOut,
     RepositoryOut,
 )
+from app.workers.tasks import index_repository_task
 
 router = APIRouter()
 
@@ -118,6 +122,27 @@ async def list_pull_request_files(
     except GitHubAPIError as exc:
         raise _github_error(exc) from exc
     return [ChangedFileOut.model_validate(f) for f in files]
+
+
+@router.post(
+    "/{repo_id}/index",
+    response_model=JobOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Trigger (re)indexing of a repository",
+)
+async def index_repository(
+    repo_id: uuid.UUID,
+    svc: GitHubService = Depends(get_github_service),
+    db: AsyncSession = Depends(get_db),
+) -> JobOut:
+    """Enqueue a background indexing job and return it immediately (202)."""
+    repo = await _resolve_repo(svc, repo_id)
+    job = await JobRepository(db).create(job_type=JobType.INDEX, repository_id=repo.id)
+    # Commit so the job row is visible before the worker picks it up (avoids a race
+    # where the worker queries a not-yet-committed job).
+    await db.commit()
+    index_repository_task.delay(str(job.id), str(repo.id))
+    return JobOut.model_validate(job)
 
 
 # --------------------------------------------------------------- helpers ----

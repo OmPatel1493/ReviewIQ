@@ -60,19 +60,23 @@ services:
       qdrant:
         condition: service_started
 
-  # ── Celery worker (enabled in Phase 4) ──────────────────────────────────
-  # worker:
-  #   build: ./backend
-  #   command: uv run celery -A app.workers.celery_app worker --loglevel=info
-  #   env_file: .env
-  #   environment:
-  #     POSTGRES_HOST: db
-  #     REDIS_HOST: redis
-  #     QDRANT_HOST: qdrant
-  #   depends_on:
-  #     - db
-  #     - redis
-  #     - qdrant
+  # ── Celery worker: runs clone/index (and later review) jobs off-request ──
+  worker:
+    build: ./backend
+    command: uv run celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      REDIS_HOST: redis
+      QDRANT_HOST: qdrant
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
 
   # ── Frontend (enabled in Phase 8; in dev we usually run Vite on the host) ─
   # frontend:
