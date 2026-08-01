@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     QDRANT_PORT: int = 6333
     QDRANT_COLLECTION: str = "reviewiq_code_chunks"
 
+    # ----------------------------------------------- Semantic search (P5) --
+    # Default number of nearest code chunks a search returns; callers may
+    # override per-request (bounded in the request schema).
+    SEARCH_TOP_K: int = 10
+
     # -------------------------------------------------- AI providers (P4/6) --
     # Local-first by default (zero API cost). Swap AI_PROVIDER=openai + a key to
     # use OpenAI without touching code.

@@ -76,3 +76,47 @@ export async function githubLoginUrl(): Promise<
 export async function logout(): Promise<void> {
   await fetch(`${BASE}/api/v1/auth/logout`, { method: 'POST' })
 }
+
+// --------------------------------------------------------------- repos ----
+export interface RepositorySummary {
+  id: string
+  full_name: string
+  index_status: string
+  indexed_at?: string | null
+}
+
+/** Repositories the signed-in user has connected. Throws 401 when logged out. */
+export const fetchRepositories = () =>
+  getJson<RepositorySummary[]>('/api/v1/repos')
+
+// -------------------------------------------------------------- search ----
+export interface SearchResultItem {
+  file_path: string
+  start_line: number
+  end_line: number
+  content: string
+  score: number
+}
+
+export interface SearchResponse {
+  repository_id: string
+  query: string
+  results: SearchResultItem[]
+}
+
+/** Semantic code search scoped to one connected repository. */
+export async function searchCode(
+  repositoryId: string,
+  query: string,
+  limit?: number,
+): Promise<SearchResponse> {
+  const res = await fetch(`${BASE}/api/v1/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repository_id: repositoryId, query, limit }),
+  })
+  if (!res.ok) {
+    throw new Error(`Search failed: ${res.status} ${res.statusText}`)
+  }
+  return (await res.json()) as SearchResponse
+}
