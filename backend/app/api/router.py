@@ -12,6 +12,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import health
 from app.modules.auth import router as auth
+from app.modules.github import router as github
 
 api_router = APIRouter()
 
@@ -21,8 +22,9 @@ api_router.include_router(health.router, tags=["health"])
 # --- Phase 2 ---
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 
+# --- Phase 3 ---
+api_router.include_router(github.router, prefix="/repos", tags=["repositories"])
+
 # --- Later phases plug in here ---
-# api_router.include_router(repositories.router, prefix="/repos", tags=["repos"])  # P3
-# api_router.include_router(pull_requests.router, prefix="/pulls", tags=["pulls"]) # P3
 # api_router.include_router(search.router, prefix="/search", tags=["search"])    # P5
 # api_router.include_router(reviews.router, prefix="/reviews", tags=["reviews"]) # P6

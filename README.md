@@ -134,7 +134,7 @@ make logs
 | ✅ 0  | Monorepo scaffold, Docker Compose, runnable API + SPA, docs |
 | ✅ 1  | Domain models, DB schema, migrations, ER diagram |
 | ✅ 2  | JWT auth + GitHub OAuth |
-| 3     | GitHub module (repos, PRs, commits, diffs) |
+| ✅ 3  | GitHub module (repos, PRs, commits, diffs) |
 | 4     | Indexing pipeline (clone → chunk → embed → Qdrant) via Celery |
 | 5     | Semantic search API + UI |
 | 6     | Review engine (RAG + LLM → scored findings) |

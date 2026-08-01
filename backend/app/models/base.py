@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import MetaData, func
+from sqlalchemy import DateTime, MetaData, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -50,11 +50,16 @@ class UUIDMixin:
 
 
 class TimestampMixin:
-    """`created_at` / `updated_at`, maintained by the database clock."""
+    """`created_at` / `updated_at`, maintained by the database clock.
+
+    We use `TIMESTAMPTZ` (timezone-aware) everywhere: timestamps are stored as UTC
+    with an offset, which avoids a whole class of naive-vs-aware bugs — including
+    inserting GitHub's timezone-aware timestamps.
+    """
 
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

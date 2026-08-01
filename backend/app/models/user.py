@@ -33,8 +33,11 @@ class User(UUIDMixin, TimestampMixin, Base):
     repositories: Mapped[list[Repository]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
     )
+    # Audit trail is intentionally PRESERVED when a user is deleted: the DB FK is
+    # ON DELETE SET NULL, and `passive_deletes=True` lets the database handle that
+    # instead of the ORM trying to delete the rows (which would contradict SET NULL).
     activity_logs: Mapped[list[ActivityLog]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
+        back_populates="user", passive_deletes=True
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper

@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -50,8 +50,8 @@ class Job(UUIDMixin, TimestampMixin, Base):
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # inputs
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # outputs
 
-    started_at: Mapped[datetime | None] = mapped_column()
-    finished_at: Mapped[datetime | None] = mapped_column()
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # --- relationships ---
     repository: Mapped[Repository | None] = relationship(back_populates="jobs")

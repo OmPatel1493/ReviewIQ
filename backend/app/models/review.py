@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -51,7 +51,7 @@ class Review(UUIDMixin, TimestampMixin, Base):
     # Free-form extras: token usage, raw rubric output, timings, etc.
     meta: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
-    completed_at: Mapped[datetime | None] = mapped_column()
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # --- relationships ---
     pull_request: Mapped[PullRequest] = relationship(back_populates="reviews")
