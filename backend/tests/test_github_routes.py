@@ -30,6 +30,8 @@ def client_no_db() -> Iterator[TestClient]:
         ("post", "/api/v1/repos/connect", {"full_name": "octo/demo"}),
         ("get", "/api/v1/repos/00000000-0000-0000-0000-000000000000", None),
         ("get", "/api/v1/repos/00000000-0000-0000-0000-000000000000/pulls", None),
+        ("post", "/api/v1/repos/00000000-0000-0000-0000-000000000000/index", None),
+        ("get", "/api/v1/jobs/00000000-0000-0000-0000-000000000000", None),
     ],
 )
 def test_repo_endpoints_require_auth(

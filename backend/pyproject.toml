@@ -21,6 +21,10 @@ dependencies = [
     "pyjwt>=2.9",
     "cryptography>=43",
     "httpx>=0.27",
+    # Phase 4 — indexing pipeline (background workers + vectors + local embeddings)
+    "celery[redis]>=5.4",
+    "qdrant-client>=1.12",
+    "fastembed>=0.4",
 ]
 
 # PEP 735 dependency groups (natively understood by uv). `dev` is installed

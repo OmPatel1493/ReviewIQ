@@ -25,7 +25,7 @@ const PHASES: { n: number; label: string }[] = [
   { n: 9, label: 'CI/CD + deploy' },
 ]
 
-const CURRENT_PHASE = 3
+const CURRENT_PHASE = 4
 
 function StatusDot({ tone }: { tone: 'ok' | 'error' | 'idle' }) {
   const color =
@@ -319,7 +319,7 @@ export default function App() {
         </section>
 
         <footer className="mt-12 text-center text-xs text-slate-600">
-          Phase 3 · GitHub integration · FastAPI + React · local-first ($0) AI stack
+          Phase 4 · indexing pipeline · FastAPI + React · local-first ($0) AI stack
         </footer>
       </main>
     </div>

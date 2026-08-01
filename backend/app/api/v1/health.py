@@ -11,9 +11,12 @@ Separating them prevents a transient DB blip from triggering a pod restart loop.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter
+from qdrant_client import AsyncQdrantClient
 
 from app.core.config import get_settings
 from app.core.db import check_db
@@ -21,6 +24,26 @@ from app.schemas.common import ComponentStatus, HealthResponse, ReadinessRespons
 
 router = APIRouter()
 settings = get_settings()
+
+
+async def _check_redis() -> bool:
+    try:
+        async with aioredis.from_url(settings.redis_url) as client:
+            await client.ping()
+        return True
+    except Exception:
+        return False
+
+
+async def _check_qdrant() -> bool:
+    client = AsyncQdrantClient(host=settings.QDRANT_HOST, port=settings.QDRANT_PORT)
+    try:
+        await client.get_collections()
+        return True
+    except Exception:
+        return False
+    finally:
+        await client.close()
 
 
 @router.get("/health", response_model=HealthResponse, summary="Liveness probe")
@@ -36,17 +59,15 @@ async def health() -> HealthResponse:
 
 @router.get("/health/ready", response_model=ReadinessResponse, summary="Readiness probe")
 async def readiness() -> ReadinessResponse:
-    # Postgres is live as of Phase 1; Redis/Qdrant are wired in Phase 4.
-    db_ok = await check_db()
+    # Ping all backing services concurrently.
+    db_ok, redis_ok, qdrant_ok = await asyncio.gather(
+        check_db(), _check_redis(), _check_qdrant()
+    )
     components = [
-        ComponentStatus(
-            name="postgres",
-            status="ok" if db_ok else "error",
-            detail=None if db_ok else "SELECT 1 failed",
-        ),
-        ComponentStatus(name="redis", status="skipped", detail="wired in Phase 4"),
-        ComponentStatus(name="qdrant", status="skipped", detail="wired in Phase 4"),
+        ComponentStatus(name="postgres", status="ok" if db_ok else "error"),
+        ComponentStatus(name="redis", status="ok" if redis_ok else "error"),
+        ComponentStatus(name="qdrant", status="ok" if qdrant_ok else "error"),
     ]
-    # Degraded (not down) if a hard dependency is unreachable.
-    overall = "ok" if db_ok else "degraded"
+    # Degraded (not down) if any hard dependency is unreachable.
+    overall = "ok" if all((db_ok, redis_ok, qdrant_ok)) else "degraded"
     return ReadinessResponse(status=overall, components=components)

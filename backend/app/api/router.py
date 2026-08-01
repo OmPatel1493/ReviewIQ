@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1 import health
+from app.api.v1 import health, jobs
 from app.modules.auth import router as auth
 from app.modules.github import router as github
 
@@ -24,6 +24,9 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 
 # --- Phase 3 ---
 api_router.include_router(github.router, prefix="/repos", tags=["repositories"])
+
+# --- Phase 4 ---
+api_router.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 
 # --- Later phases plug in here ---
 # api_router.include_router(search.router, prefix="/search", tags=["search"])    # P5

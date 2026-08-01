@@ -105,6 +105,27 @@ class Settings(BaseSettings):
     # BGE / E5 are strong open embedding models; small = fast on CPU.
     EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
     EMBEDDING_DIM: int = Field(default=384, description="Vector size stored in Qdrant")
+    EMBED_BATCH_SIZE: int = 64
+
+    # ----------------------------------------------- Celery workers (P4) --
+    # Broker + result backend both ride on Redis. EAGER runs tasks inline (no
+    # worker) — handy for tests and quick local runs.
+    CELERY_TASK_ALWAYS_EAGER: bool = False
+
+    # ------------------------------------------------ Indexing pipeline (P4) --
+    CLONE_DIR: str = "/tmp/reviewiq-clones"
+    # Only embed source files we understand; skip everything else.
+    INDEX_INCLUDE_EXTENSIONS: str = (
+        ".py,.js,.jsx,.ts,.tsx,.java,.go,.rb,.rs,.c,.cc,.cpp,.h,.hpp,.cs,"
+        ".php,.kt,.swift,.scala,.sh,.sql,.md,.yaml,.yml,.toml"
+    )
+    INDEX_EXCLUDE_DIRS: str = (
+        ".git,node_modules,.venv,venv,dist,build,__pycache__,.next,.mypy_cache,"
+        ".ruff_cache,.pytest_cache,target,vendor"
+    )
+    INDEX_MAX_FILE_BYTES: int = 200_000  # skip huge/generated files
+    CHUNK_MAX_LINES: int = 60
+    CHUNK_OVERLAP_LINES: int = 10
 
     # --------------------------------------------------------------- Helpers --
     @property
@@ -115,6 +136,14 @@ class Settings(BaseSettings):
     @property
     def github_oauth_scopes(self) -> list[str]:
         return [s.strip() for s in self.GITHUB_OAUTH_SCOPES.split() if s.strip()]
+
+    @property
+    def index_include_extensions(self) -> set[str]:
+        return {e.strip().lower() for e in self.INDEX_INCLUDE_EXTENSIONS.split(",") if e.strip()}
+
+    @property
+    def index_exclude_dirs(self) -> set[str]:
+        return {d.strip() for d in self.INDEX_EXCLUDE_DIRS.split(",") if d.strip()}
 
     @property
     def fernet_key(self) -> bytes:
