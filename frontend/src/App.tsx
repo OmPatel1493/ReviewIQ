@@ -1,17 +1,19 @@
-import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchHealth,
   fetchMe,
   fetchReadiness,
+  fetchRepositories,
   githubLoginUrl,
   logout,
+  searchCode,
   type ComponentStatus,
   type HealthResponse,
   type ReadinessResponse,
 } from '@/lib/api'
 
-/** The build roadmap — Phase 0 is what we're shipping right now. */
+/** The build roadmap — `CURRENT_PHASE` marks what we're shipping right now. */
 const PHASES: { n: number; label: string }[] = [
   { n: 0, label: 'Scaffold' },
   { n: 1, label: 'Data model' },
@@ -25,7 +27,7 @@ const PHASES: { n: number; label: string }[] = [
   { n: 9, label: 'CI/CD + deploy' },
 ]
 
-const CURRENT_PHASE = 4
+const CURRENT_PHASE = 5
 
 function StatusDot({ tone }: { tone: 'ok' | 'error' | 'idle' }) {
   const color =
@@ -269,6 +271,127 @@ function AuthBar() {
   )
 }
 
+function SearchCard() {
+  const repos = useQuery({
+    queryKey: ['repositories'],
+    queryFn: fetchRepositories,
+    retry: false,
+  })
+  const [repoId, setRepoId] = useState('')
+  const [query, setQuery] = useState('')
+
+  // Default the selector to the first connected repo once they load.
+  useEffect(() => {
+    if (!repoId && repos.data && repos.data.length > 0) {
+      setRepoId(repos.data[0].id)
+    }
+  }, [repos.data, repoId])
+
+  const search = useMutation({
+    mutationFn: () => searchCode(repoId, query.trim()),
+  })
+
+  const canSearch = repoId !== '' && query.trim() !== '' && !search.isPending
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (canSearch) search.mutate()
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Semantic code search
+        </p>
+        <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
+          Phase 5
+        </span>
+      </div>
+
+      {repos.isError ? (
+        <p className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-200">
+          Sign in with GitHub to search your indexed repositories.
+        </p>
+      ) : repos.data && repos.data.length === 0 ? (
+        <p className="rounded-lg bg-white/[0.02] p-3 text-sm text-slate-300">
+          No connected repositories yet. Connect and index a repo, then search it here.
+        </p>
+      ) : (
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <select
+              value={repoId}
+              onChange={(e) => setRepoId(e.target.value)}
+              disabled={repos.isPending}
+              className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-indigo-400/60 sm:w-56"
+            >
+              {repos.isPending && <option>Loading repos…</option>}
+              {repos.data?.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.full_name}
+                  {r.index_status !== 'indexed' ? ` (${r.index_status})` : ''}
+                </option>
+              ))}
+            </select>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="where is JWT auth implemented?"
+              className="flex-1 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none transition focus:border-indigo-400/60"
+            />
+            <button
+              type="submit"
+              disabled={!canSearch}
+              className="rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+            >
+              {search.isPending ? 'Searching…' : 'Search'}
+            </button>
+          </div>
+
+          {search.isError && (
+            <p className="rounded-lg bg-rose-500/10 p-3 text-sm text-rose-200">
+              {(search.error as Error).message}
+            </p>
+          )}
+
+          {search.data && search.data.results.length === 0 && (
+            <p className="rounded-lg bg-white/[0.02] p-3 text-sm text-slate-400">
+              No matches. Make sure the selected repository has finished indexing.
+            </p>
+          )}
+
+          {search.data && search.data.results.length > 0 && (
+            <ul className="mt-1 space-y-3">
+              {search.data.results.map((r, i) => (
+                <li
+                  key={`${r.file_path}:${r.start_line}:${i}`}
+                  className="rounded-xl border border-white/10 bg-white/[0.02] p-3"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <span className="truncate font-mono text-xs text-indigo-300">
+                      {r.file_path}
+                      <span className="text-slate-500">
+                        :{r.start_line}-{r.end_line}
+                      </span>
+                    </span>
+                    <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">
+                      {(r.score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <pre className="max-h-40 overflow-auto rounded-lg bg-slate-950/60 p-3 text-xs leading-relaxed text-slate-300">
+                    <code>{r.content}</code>
+                  </pre>
+                </li>
+              ))}
+            </ul>
+          )}
+        </form>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <div className="min-h-full bg-slate-950 text-slate-100">
@@ -318,8 +441,12 @@ export default function App() {
           <RoadmapCard />
         </section>
 
+        <section className="mt-6">
+          <SearchCard />
+        </section>
+
         <footer className="mt-12 text-center text-xs text-slate-600">
-          Phase 4 · indexing pipeline · FastAPI + React · local-first ($0) AI stack
+          Phase 5 · semantic search · FastAPI + React · local-first ($0) AI stack
         </footer>
       </main>
     </div>

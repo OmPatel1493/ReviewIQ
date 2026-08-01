@@ -9,6 +9,7 @@ approximate-nearest-neighbour search); PostgreSQL keeps the relational metadata 
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 
 from qdrant_client import AsyncQdrantClient, models
 
@@ -18,6 +19,18 @@ settings = get_settings()
 
 # Qdrant payload key we filter on to scope search/deletes to a single repository.
 REPO_KEY = "repository_id"
+
+
+@dataclass(frozen=True)
+class SearchHit:
+    """One nearest-neighbour match, reconstructed from a point's payload so the
+    caller never touches Qdrant types. `score` is cosine similarity (higher = closer)."""
+
+    file_path: str
+    start_line: int
+    end_line: int
+    content: str
+    score: float
 
 
 def make_point(
@@ -66,6 +79,37 @@ class QdrantVectorStore:
     async def upsert(self, points: list[models.PointStruct]) -> None:
         if points:
             await self._client.upsert(collection_name=self.collection, points=points)
+
+    async def search(
+        self, repo_id: str, query_vector: list[float], limit: int
+    ) -> list[SearchHit]:
+        """Return the `limit` nearest chunks to `query_vector` within one repository.
+
+        Scoped to `repo_id` via the same payload filter used for deletes, so users
+        only ever see results from their own indexed code. Returns an empty list if
+        nothing has been indexed yet (collection absent), rather than raising."""
+        if not await self._client.collection_exists(self.collection):
+            return []
+        response = await self._client.query_points(
+            collection_name=self.collection,
+            query=query_vector,
+            query_filter=self._repo_filter(repo_id),
+            limit=limit,
+            with_payload=True,
+        )
+        hits: list[SearchHit] = []
+        for point in response.points:
+            payload = point.payload or {}
+            hits.append(
+                SearchHit(
+                    file_path=str(payload.get("file_path", "")),
+                    start_line=int(payload.get("start_line", 0)),
+                    end_line=int(payload.get("end_line", 0)),
+                    content=str(payload.get("content", "")),
+                    score=float(point.score),
+                )
+            )
+        return hits
 
     async def delete_by_repo(self, repo_id: str) -> None:
         await self._client.delete(
