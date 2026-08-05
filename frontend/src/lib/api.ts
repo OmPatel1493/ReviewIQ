@@ -120,3 +120,69 @@ export async function searchCode(
   }
   return (await res.json()) as SearchResponse
 }
+
+// -------------------------------------------------------------- reviews ----
+export interface JobStatusOut {
+  id: string
+  type: string
+  status: string // queued | running | succeeded | failed
+  progress: number
+  error?: string | null
+  result?: Record<string, unknown> | null
+}
+
+export interface ReviewCreatedOut {
+  review_id: string
+  job_id: string
+}
+
+export interface FindingOut {
+  id: string
+  file_path: string
+  line_start: number | null
+  line_end: number | null
+  severity: string
+  category: string
+  title: string
+  rationale: string
+  impact: string | null
+  suggestion: string | null
+  confidence: number | null
+}
+
+export interface ReviewOut {
+  id: string
+  pull_request_id: string
+  status: string
+  summary: string | null
+  quality_score: number | null
+  security_score: number | null
+  complexity_score: number | null
+  maintainability_score: number | null
+  performance_score: number | null
+  provider: string | null
+  model: string | null
+  created_at: string
+  completed_at: string | null
+  findings: FindingOut[]
+}
+
+/** Kick off an AI review of a PR. Returns ids to poll the job + fetch the review. */
+export async function triggerReview(
+  repositoryId: string,
+  pullNumber: number,
+): Promise<ReviewCreatedOut> {
+  const res = await fetch(`${BASE}/api/v1/reviews`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repository_id: repositoryId, pull_number: pullNumber }),
+  })
+  if (!res.ok) {
+    throw new Error(`Review request failed: ${res.status} ${res.statusText}`)
+  }
+  return (await res.json()) as ReviewCreatedOut
+}
+
+export const fetchJob = (jobId: string) => getJson<JobStatusOut>(`/api/v1/jobs/${jobId}`)
+export const fetchReview = (reviewId: string) =>
+  getJson<ReviewOut>(`/api/v1/reviews/${reviewId}`)

@@ -17,10 +17,13 @@ from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.models import PullRequest, Repository
 from app.modules.auth.security import decrypt_token
 from app.modules.indexing.service import IndexingService
+from app.modules.review.service import ReviewService
 from app.repositories.job_repository import JobRepository
 from app.repositories.repository_repository import RepositoryRepository
+from app.repositories.review_repository import ReviewRepository
 from app.repositories.user_repository import UserRepository
 
 settings = get_settings()
@@ -64,6 +67,54 @@ async def run_index_job(
                 await jobs.mark_failed(job_uuid, str(exc))
                 await db.commit()
                 logger.exception("Index job %s failed", job_id)
+                raise
+            finally:
+                await service.aclose()
+    finally:
+        await engine.dispose()
+
+
+async def run_review_job(
+    *, job_id: str, review_id: str, celery_task_id: str | None = None
+) -> dict[str, Any]:
+    """Run a PR review (RAG + LLM) as the repo owner, tracking the job + review status."""
+    engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    job_uuid = uuid.UUID(job_id)
+    review_uuid = uuid.UUID(review_id)
+
+    try:
+        async with session_factory() as db:
+            jobs = JobRepository(db)
+            reviews = ReviewRepository(db)
+            await jobs.mark_running(job_uuid, celery_task_id)
+            await reviews.mark_running(review_uuid)
+            await db.commit()
+
+            # The review runs as the repository owner — their OAuth token fetches the diff.
+            review = await reviews.get(review_uuid)
+            if review is None:
+                raise ValueError(f"review {review_id} not found")
+            pr = await db.get(PullRequest, review.pull_request_id)
+            repo = await db.get(Repository, pr.repository_id) if pr is not None else None
+            if repo is None:
+                raise ValueError("repository for review not found")
+            owner = await UserRepository(db).get(repo.owner_id)
+            if owner is None:
+                raise ValueError("repository owner not found")
+
+            service = ReviewService(db, owner)
+            try:
+                result = await service.run_review(review_uuid)
+                await jobs.mark_succeeded(job_uuid, result)
+                await db.commit()
+                return result
+            except Exception as exc:
+                await db.rollback()
+                await ReviewRepository(db).mark_failed(review_uuid)
+                await jobs.mark_failed(job_uuid, str(exc))
+                await db.commit()
+                logger.exception("Review job %s failed", job_id)
                 raise
             finally:
                 await service.aclose()

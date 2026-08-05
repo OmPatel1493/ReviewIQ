@@ -13,6 +13,7 @@ from fastapi import APIRouter
 from app.api.v1 import health, jobs
 from app.modules.auth import router as auth
 from app.modules.github import router as github
+from app.modules.review import router as review
 from app.modules.search import router as search
 
 api_router = APIRouter()
@@ -32,5 +33,5 @@ api_router.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 # --- Phase 5 ---
 api_router.include_router(search.router, prefix="/search", tags=["search"])
 
-# --- Later phases plug in here ---
-# api_router.include_router(reviews.router, prefix="/reviews", tags=["reviews"]) # P6
+# --- Phase 6 ---
+api_router.include_router(review.router, prefix="/reviews", tags=["reviews"])
