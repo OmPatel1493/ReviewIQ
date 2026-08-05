@@ -2,15 +2,19 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchHealth,
+  fetchJob,
   fetchMe,
   fetchReadiness,
   fetchRepositories,
+  fetchReview,
   githubLoginUrl,
   logout,
   searchCode,
+  triggerReview,
   type ComponentStatus,
   type HealthResponse,
   type ReadinessResponse,
+  type ReviewOut,
 } from '@/lib/api'
 
 /** The build roadmap — `CURRENT_PHASE` marks what we're shipping right now. */
@@ -27,7 +31,7 @@ const PHASES: { n: number; label: string }[] = [
   { n: 9, label: 'CI/CD + deploy' },
 ]
 
-const CURRENT_PHASE = 5
+const CURRENT_PHASE = 6
 
 function StatusDot({ tone }: { tone: 'ok' | 'error' | 'idle' }) {
   const color =
@@ -392,6 +396,210 @@ function SearchCard() {
   )
 }
 
+const SEVERITY_STYLE: Record<string, string> = {
+  critical: 'bg-rose-500/15 text-rose-300 ring-rose-500/30',
+  high: 'bg-orange-500/15 text-orange-300 ring-orange-500/30',
+  medium: 'bg-amber-500/15 text-amber-300 ring-amber-500/30',
+  low: 'bg-sky-500/15 text-sky-300 ring-sky-500/30',
+}
+
+function ScoreBar({ label, value }: { label: string; value: number | null }) {
+  const v = value ?? 0
+  const tone =
+    v >= 80 ? 'bg-emerald-400' : v >= 50 ? 'bg-amber-400' : 'bg-rose-400'
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs">
+        <span className="text-slate-400">{label}</span>
+        <span className="font-medium text-slate-200">{value ?? '—'}</span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        <div className={`h-full rounded-full ${tone}`} style={{ width: `${v}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function ReviewResult({ review }: { review: ReviewOut }) {
+  return (
+    <div className="mt-2 space-y-4">
+      {review.summary && (
+        <p className="rounded-lg bg-white/[0.02] p-3 text-sm text-slate-300">
+          {review.summary}
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
+        <ScoreBar label="Quality" value={review.quality_score} />
+        <ScoreBar label="Security" value={review.security_score} />
+        <ScoreBar label="Complexity" value={review.complexity_score} />
+        <ScoreBar label="Maintainability" value={review.maintainability_score} />
+        <ScoreBar label="Performance" value={review.performance_score} />
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          {review.findings.length} finding{review.findings.length === 1 ? '' : 's'}
+        </p>
+        <ul className="space-y-3">
+          {review.findings.map((f) => (
+            <li
+              key={f.id}
+              className="rounded-xl border border-white/10 bg-white/[0.02] p-3"
+            >
+              <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${
+                    SEVERITY_STYLE[f.severity] ?? SEVERITY_STYLE.low
+                  }`}
+                >
+                  {f.severity}
+                </span>
+                <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs capitalize text-slate-300">
+                  {f.category.replace('_', ' ')}
+                </span>
+                <span className="truncate font-mono text-xs text-indigo-300">
+                  {f.file_path}
+                  {f.line_start != null && (
+                    <span className="text-slate-500">:{f.line_start}</span>
+                  )}
+                </span>
+              </div>
+              <p className="text-sm font-medium text-slate-100">{f.title}</p>
+              <p className="mt-1 text-sm text-slate-400">{f.rationale}</p>
+              {f.suggestion && (
+                <p className="mt-2 rounded-lg bg-emerald-500/5 p-2 text-xs text-emerald-200">
+                  Fix: {f.suggestion}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+function ReviewCard() {
+  const repos = useQuery({
+    queryKey: ['repositories'],
+    queryFn: fetchRepositories,
+    retry: false,
+  })
+  const [repoId, setRepoId] = useState('')
+  const [pull, setPull] = useState('')
+  const [ids, setIds] = useState<{ reviewId: string; jobId: string } | null>(null)
+
+  useEffect(() => {
+    if (!repoId && repos.data && repos.data.length > 0) {
+      setRepoId(repos.data[0].id)
+    }
+  }, [repos.data, repoId])
+
+  const trigger = useMutation({
+    mutationFn: () => triggerReview(repoId, Number(pull)),
+    onSuccess: (d) => setIds({ reviewId: d.review_id, jobId: d.job_id }),
+  })
+
+  // Poll the job until it finishes, then fetch the completed review.
+  const job = useQuery({
+    queryKey: ['review-job', ids?.jobId],
+    queryFn: () => fetchJob(ids!.jobId),
+    enabled: !!ids,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status
+      return s === 'succeeded' || s === 'failed' ? false : 1500
+    },
+  })
+  const succeeded = job.data?.status === 'succeeded'
+  const review = useQuery({
+    queryKey: ['review', ids?.reviewId],
+    queryFn: () => fetchReview(ids!.reviewId),
+    enabled: !!ids && succeeded,
+  })
+
+  const canRun = repoId !== '' && Number(pull) >= 1 && !trigger.isPending
+  const working = !!ids && !succeeded && job.data?.status !== 'failed'
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (canRun) trigger.mutate()
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          AI pull-request review
+        </p>
+        <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
+          Phase 6
+        </span>
+      </div>
+
+      {repos.isError ? (
+        <p className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-200">
+          Sign in with GitHub to review your pull requests.
+        </p>
+      ) : (
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <select
+              value={repoId}
+              onChange={(e) => setRepoId(e.target.value)}
+              disabled={repos.isPending}
+              className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-indigo-400/60 sm:w-56"
+            >
+              {repos.isPending && <option>Loading repos…</option>}
+              {repos.data?.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.full_name}
+                </option>
+              ))}
+            </select>
+            <input
+              value={pull}
+              onChange={(e) => setPull(e.target.value.replace(/\D/g, ''))}
+              inputMode="numeric"
+              placeholder="PR number, e.g. 42"
+              className="flex-1 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none transition focus:border-indigo-400/60"
+            />
+            <button
+              type="submit"
+              disabled={!canRun}
+              className="rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+            >
+              {trigger.isPending ? 'Starting…' : 'Review PR'}
+            </button>
+          </div>
+
+          {trigger.isError && (
+            <p className="rounded-lg bg-rose-500/10 p-3 text-sm text-rose-200">
+              {(trigger.error as Error).message}
+            </p>
+          )}
+
+          {working && (
+            <p className="flex items-center gap-2 rounded-lg bg-white/[0.02] p-3 text-sm text-slate-300">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
+              {job.data?.status === 'running'
+                ? 'Analyzing the diff with RAG + LLM…'
+                : 'Queued…'}
+            </p>
+          )}
+
+          {job.data?.status === 'failed' && (
+            <p className="rounded-lg bg-rose-500/10 p-3 text-sm text-rose-200">
+              Review failed: {job.data.error ?? 'unknown error'}
+            </p>
+          )}
+
+          {succeeded && review.data && <ReviewResult review={review.data} />}
+        </form>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <div className="min-h-full bg-slate-950 text-slate-100">
@@ -445,8 +653,12 @@ export default function App() {
           <SearchCard />
         </section>
 
+        <section className="mt-6">
+          <ReviewCard />
+        </section>
+
         <footer className="mt-12 text-center text-xs text-slate-600">
-          Phase 5 · semantic search · FastAPI + React · local-first ($0) AI stack
+          Phase 6 · AI review engine · FastAPI + React · local-first ($0) AI stack
         </footer>
       </main>
     </div>

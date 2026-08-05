@@ -80,6 +80,15 @@ class GitHubService:
         gh_pulls = await self.gh.list_pull_requests(owner, name, state="all")
         return [await self.pulls.upsert_from_github(repo.id, gp) for gp in gh_pulls]
 
+    async def get_or_sync_pull_request(
+        self, repo_id: uuid.UUID, number: int
+    ) -> PullRequest:
+        """Fetch a single PR from GitHub and upsert its row (used before a review)."""
+        repo = await self.get_connected_repository(repo_id)
+        owner, _, name = repo.full_name.partition("/")
+        gh_pull = await self.gh.get_pull_request(owner, name, number)
+        return await self.pulls.upsert_from_github(repo.id, gh_pull)
+
     async def get_pull_request_files(
         self, repo_id: uuid.UUID, number: int
     ) -> list[GitHubFile]:

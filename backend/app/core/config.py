@@ -97,6 +97,13 @@ class Settings(BaseSettings):
     # override per-request (bounded in the request schema).
     SEARCH_TOP_K: int = 10
 
+    # ------------------------------------------------- Review engine (P6) --
+    # Bound the work (and the prompt size / cost) of a single PR review.
+    REVIEW_MAX_FILES: int = 12          # analyse at most this many changed files
+    REVIEW_MAX_PATCH_CHARS: int = 6000  # truncate a file's diff to this many chars
+    REVIEW_CONTEXT_TOP_K: int = 3       # RAG snippets retrieved per changed file
+    REVIEW_TIMEOUT_SECONDS: float = 180.0  # per LLM call (reviews are slow, local CPU)
+
     # -------------------------------------------------- AI providers (P4/6) --
     # Local-first by default (zero API cost). Swap AI_PROVIDER=openai + a key to
     # use OpenAI without touching code.
