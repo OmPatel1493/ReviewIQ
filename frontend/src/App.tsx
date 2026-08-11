@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  askQuestion,
   fetchHealth,
   fetchJob,
   fetchMe,
@@ -31,7 +32,7 @@ const PHASES: { n: number; label: string }[] = [
   { n: 9, label: 'CI/CD + deploy' },
 ]
 
-const CURRENT_PHASE = 6
+const CURRENT_PHASE = 7
 
 function StatusDot({ tone }: { tone: 'ok' | 'error' | 'idle' }) {
   const color =
@@ -600,6 +601,117 @@ function ReviewCard() {
   )
 }
 
+function AskCard() {
+  const repos = useQuery({
+    queryKey: ['repositories'],
+    queryFn: fetchRepositories,
+    retry: false,
+  })
+  const [repoId, setRepoId] = useState('')
+  const [question, setQuestion] = useState('')
+
+  useEffect(() => {
+    if (!repoId && repos.data && repos.data.length > 0) {
+      setRepoId(repos.data[0].id)
+    }
+  }, [repos.data, repoId])
+
+  const ask = useMutation({
+    mutationFn: () => askQuestion(repoId, question.trim()),
+  })
+
+  const canAsk = repoId !== '' && question.trim() !== '' && !ask.isPending
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (canAsk) ask.mutate()
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Ask AI about your code
+        </p>
+        <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
+          Phase 7
+        </span>
+      </div>
+
+      {repos.isError ? (
+        <p className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-200">
+          Sign in with GitHub to ask questions about your indexed repositories.
+        </p>
+      ) : (
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
+          <select
+            value={repoId}
+            onChange={(e) => setRepoId(e.target.value)}
+            disabled={repos.isPending}
+            className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-indigo-400/60 sm:w-56"
+          >
+            {repos.isPending && <option>Loading repos…</option>}
+            {repos.data?.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.full_name}
+              </option>
+            ))}
+          </select>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="What tests should I write for the auth module?"
+              className="flex-1 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none transition focus:border-indigo-400/60"
+            />
+            <button
+              type="submit"
+              disabled={!canAsk}
+              className="rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+            >
+              {ask.isPending ? 'Thinking…' : 'Ask'}
+            </button>
+          </div>
+
+          {ask.isError && (
+            <p className="rounded-lg bg-rose-500/10 p-3 text-sm text-rose-200">
+              {(ask.error as Error).message}
+            </p>
+          )}
+
+          {ask.data && (
+            <div className="mt-1 space-y-3">
+              <p className="whitespace-pre-wrap rounded-lg bg-white/[0.02] p-3 text-sm text-slate-200">
+                {ask.data.answer}
+              </p>
+              {ask.data.sources.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Grounded in
+                  </p>
+                  <ul className="flex flex-wrap gap-2">
+                    {ask.data.sources.map((s, i) => (
+                      <li
+                        key={`${s.file_path}:${s.start_line}:${i}`}
+                        className="rounded-lg bg-white/5 px-2 py-1 font-mono text-xs text-indigo-300"
+                      >
+                        {s.file_path}
+                        <span className="text-slate-500">
+                          :{s.start_line}-{s.end_line}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </form>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <div className="min-h-full bg-slate-950 text-slate-100">
@@ -657,8 +769,12 @@ export default function App() {
           <ReviewCard />
         </section>
 
+        <section className="mt-6">
+          <AskCard />
+        </section>
+
         <footer className="mt-12 text-center text-xs text-slate-600">
-          Phase 6 · AI review engine · FastAPI + React · local-first ($0) AI stack
+          Phase 7 · Ask-AI · FastAPI + React · local-first ($0) AI stack
         </footer>
       </main>
     </div>

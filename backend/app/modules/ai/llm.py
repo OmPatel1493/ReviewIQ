@@ -31,6 +31,8 @@ class LLMProvider(Protocol):
 
     async def generate_json(self, system_prompt: str, user_prompt: str) -> str: ...
 
+    async def generate_text(self, system_prompt: str, user_prompt: str) -> str: ...
+
 
 class OllamaProvider:
     """Local chat completion via Ollama's REST API (`POST /api/chat`, JSON mode).
@@ -49,16 +51,28 @@ class OllamaProvider:
         self._client = client
 
     async def generate_json(self, system_prompt: str, user_prompt: str) -> str:
-        payload = {
+        """Chat completion constrained to valid JSON (for the review engine)."""
+        return await self._chat(system_prompt, user_prompt, json_mode=True)
+
+    async def generate_text(self, system_prompt: str, user_prompt: str) -> str:
+        """Free-text chat completion (for Ask-AI)."""
+        return await self._chat(system_prompt, user_prompt, json_mode=False)
+
+    async def _chat(
+        self, system_prompt: str, user_prompt: str, *, json_mode: bool
+    ) -> str:
+        payload: dict = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             "stream": False,
-            "format": "json",  # constrain output to valid JSON
-            "options": {"temperature": 0.1},  # low temp = more deterministic reviews
+            "options": {"temperature": 0.1},  # low temp = more deterministic output
         }
+        if json_mode:
+            payload["format"] = "json"  # constrain output to valid JSON
+
         url = f"{self._base}/api/chat"
         try:
             if self._client is not None:

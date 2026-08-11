@@ -186,3 +186,33 @@ export async function triggerReview(
 export const fetchJob = (jobId: string) => getJson<JobStatusOut>(`/api/v1/jobs/${jobId}`)
 export const fetchReview = (reviewId: string) =>
   getJson<ReviewOut>(`/api/v1/reviews/${reviewId}`)
+
+// ---------------------------------------------------------------- ask ----
+export interface AskSource {
+  file_path: string
+  start_line: number
+  end_line: number
+  score: number
+}
+
+export interface AskResponse {
+  question: string
+  answer: string
+  sources: AskSource[]
+}
+
+/** Ask a natural-language question grounded in an indexed repo (RAG). */
+export async function askQuestion(
+  repositoryId: string,
+  question: string,
+): Promise<AskResponse> {
+  const res = await fetch(`${BASE}/api/v1/ask`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repository_id: repositoryId, question }),
+  })
+  if (!res.ok) {
+    throw new Error(`Ask failed: ${res.status} ${res.statusText}`)
+  }
+  return (await res.json()) as AskResponse
+}

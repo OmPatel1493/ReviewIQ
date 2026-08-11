@@ -32,6 +32,19 @@ async def test_generate_json_posts_chat_and_returns_content() -> None:
     assert seen["body"]["messages"][0]["role"] == "system"
 
 
+async def test_generate_text_omits_json_format() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"message": {"content": "plain answer"}})
+
+    out = await _provider(handler).generate_text("system", "user")
+
+    assert out == "plain answer"
+    assert "format" not in seen["body"]  # free-text mode, not JSON-constrained
+
+
 async def test_generate_json_raises_on_error_status() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, text="model overloaded")
