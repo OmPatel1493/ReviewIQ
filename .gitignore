@@ -5,6 +5,7 @@
 # 🔒 LOCAL-ONLY: interview prep + private project notes. NEVER commit these.
 interview-notes/
 *.local.md
+startcmd.md
 
 # Secrets / environment
 .env

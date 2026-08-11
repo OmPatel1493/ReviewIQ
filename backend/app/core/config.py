@@ -104,6 +104,9 @@ class Settings(BaseSettings):
     REVIEW_CONTEXT_TOP_K: int = 3       # RAG snippets retrieved per changed file
     REVIEW_TIMEOUT_SECONDS: float = 180.0  # per LLM call (reviews are slow, local CPU)
 
+    # ---------------------------------------------------------- Ask-AI (P7) --
+    ASK_CONTEXT_TOP_K: int = 6          # RAG snippets retrieved to ground an answer
+
     # -------------------------------------------------- AI providers (P4/6) --
     # Local-first by default (zero API cost). Swap AI_PROVIDER=openai + a key to
     # use OpenAI without touching code.
