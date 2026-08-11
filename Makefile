@@ -6,7 +6,7 @@ FRONTEND := frontend
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-api install-web dev-api dev-web test lint fmt \
+.PHONY: help install install-api install-web dev-api dev-web worker review test lint fmt \
         up down logs build ps clean
 
 help: ## Show this help
@@ -26,6 +26,12 @@ dev-api: ## Run FastAPI with autoreload on :8000
 
 dev-web: ## Run the Vite dev server on :5173
 	cd $(FRONTEND) && npm run dev
+
+worker: ## Run the Celery worker (needed for indexing + reviews)
+	cd $(BACKEND) && uv run celery -A app.workers.celery_app worker --loglevel=info
+
+review: ## Trigger a review from the CLI: REVIEWIQ_TOKEN=<jwt> make review REPO=<uuid> PR=<n>
+	./scripts/review.sh $(REPO) $(PR)
 
 test: ## Run backend tests
 	cd $(BACKEND) && uv run pytest
