@@ -187,6 +187,41 @@ export const fetchJob = (jobId: string) => getJson<JobStatusOut>(`/api/v1/jobs/$
 export const fetchReview = (reviewId: string) =>
   getJson<ReviewOut>(`/api/v1/reviews/${reviewId}`)
 
+// ---------------------------------------------------------- analytics ----
+export interface ScoreAverages {
+  quality: number | null
+  security: number | null
+  complexity: number | null
+  maintainability: number | null
+  performance: number | null
+}
+
+export interface RecentReview {
+  id: string
+  repository: string
+  pull_number: number
+  status: string
+  quality_score: number | null
+  findings: number
+  created_at: string
+}
+
+export interface AnalyticsOverview {
+  repos_connected: number
+  repos_indexed: number
+  reviews_total: number
+  reviews_completed: number
+  findings_total: number
+  findings_by_severity: Record<string, number>
+  findings_by_category: Record<string, number>
+  score_averages: ScoreAverages
+  recent_reviews: RecentReview[]
+}
+
+/** Aggregate dashboard stats for the signed-in user. Throws 401 when logged out. */
+export const fetchAnalytics = () =>
+  getJson<AnalyticsOverview>('/api/v1/analytics/overview')
+
 // ---------------------------------------------------------------- ask ----
 export interface AskSource {
   file_path: string

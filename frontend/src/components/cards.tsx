@@ -1,0 +1,673 @@
+import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  askQuestion,
+  fetchHealth,
+  fetchJob,
+  fetchMe,
+  fetchReadiness,
+  fetchRepositories,
+  fetchReview,
+  githubLoginUrl,
+  logout,
+  searchCode,
+  triggerReview,
+  type ComponentStatus,
+  type HealthResponse,
+  type ReadinessResponse,
+  type ReviewOut,
+} from '@/lib/api'
+
+/** The build roadmap — `CURRENT_PHASE` marks what we're shipping right now. */
+const PHASES: { n: number; label: string }[] = [
+  { n: 0, label: 'Scaffold' },
+  { n: 1, label: 'Data model' },
+  { n: 2, label: 'Auth + OAuth' },
+  { n: 3, label: 'GitHub' },
+  { n: 4, label: 'Indexing' },
+  { n: 5, label: 'Search' },
+  { n: 6, label: 'Review engine' },
+  { n: 7, label: 'Ask AI' },
+  { n: 8, label: 'Dashboard UI' },
+  { n: 9, label: 'CI/CD + deploy' },
+]
+
+const CURRENT_PHASE = 8
+
+function StatusDot({ tone }: { tone: 'ok' | 'error' | 'idle' }) {
+  const color =
+    tone === 'ok' ? 'bg-emerald-400' : tone === 'error' ? 'bg-rose-400' : 'bg-amber-400'
+  return (
+    <span className="relative flex h-2.5 w-2.5">
+      {tone === 'ok' && (
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70" />
+      )}
+      <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${color}`} />
+    </span>
+  )
+}
+
+function ComponentBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    ok: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30',
+    error: 'bg-rose-500/15 text-rose-300 ring-rose-500/30',
+    skipped: 'bg-slate-500/15 text-slate-300 ring-slate-500/30',
+  }
+  const cls = map[status] ?? map.skipped
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${cls}`}
+    >
+      {status}
+    </span>
+  )
+}
+
+const placeholderComponents: ComponentStatus[] = [
+  { name: 'postgres', status: 'skipped', detail: 'wired in Phase 1' },
+  { name: 'redis', status: 'skipped', detail: 'wired in Phase 4' },
+  { name: 'qdrant', status: 'skipped', detail: 'wired in Phase 4' },
+]
+
+export function BackendCard() {
+  const health = useQuery<HealthResponse>({ queryKey: ['health'], queryFn: fetchHealth })
+  const readiness = useQuery<ReadinessResponse>({
+    queryKey: ['readiness'],
+    queryFn: fetchReadiness,
+  })
+
+  const tone: 'ok' | 'error' | 'idle' = health.isPending
+    ? 'idle'
+    : health.isError
+      ? 'error'
+      : 'ok'
+
+  const label = health.isPending
+    ? 'Checking backend…'
+    : health.isError
+      ? 'Backend unreachable'
+      : 'Backend online'
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <StatusDot tone={tone} />
+          <span className="text-sm font-medium text-slate-200">{label}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            void health.refetch()
+            void readiness.refetch()
+          }}
+          className="rounded-lg border border-white/10 px-2.5 py-1 text-xs text-slate-300 transition hover:border-white/25 hover:text-white"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {health.data && (
+        <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+          <div>
+            <dt className="text-slate-500">Service</dt>
+            <dd className="font-medium text-slate-100">{health.data.app}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Version</dt>
+            <dd className="font-medium text-slate-100">v{health.data.version}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Environment</dt>
+            <dd className="font-medium text-slate-100">{health.data.environment}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Status</dt>
+            <dd className="font-medium text-emerald-300">{health.data.status}</dd>
+          </div>
+        </dl>
+      )}
+
+      {health.isError && (
+        <p className="mt-5 rounded-lg bg-rose-500/10 p-3 text-sm text-rose-200">
+          Could not reach <code className="font-mono">/api/v1/health</code>. Start the backend
+          with <code className="font-mono">make dev-api</code> and this panel goes green.
+        </p>
+      )}
+
+      <div className="mt-6">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Dependencies
+        </p>
+        <ul className="space-y-2">
+          {(readiness.data?.components ?? placeholderComponents).map((c: ComponentStatus) => (
+            <li
+              key={c.name}
+              className="flex items-center justify-between rounded-lg bg-white/[0.02] px-3 py-2"
+            >
+              <div className="flex flex-col">
+                <span className="text-sm font-medium capitalize text-slate-200">{c.name}</span>
+                {c.detail && <span className="text-xs text-slate-500">{c.detail}</span>}
+              </div>
+              <ComponentBadge status={c.status} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+export function RoadmapCard() {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur">
+      <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-500">
+        Build roadmap
+      </p>
+      <ol className="space-y-2">
+        {PHASES.map((p) => {
+          const done = p.n < CURRENT_PHASE
+          const current = p.n === CURRENT_PHASE
+          return (
+            <li key={p.n} className="flex items-center gap-3">
+              <span
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                  current
+                    ? 'bg-gradient-to-br from-indigo-500 to-violet-500 text-white'
+                    : done
+                      ? 'bg-emerald-500/20 text-emerald-300'
+                      : 'bg-white/5 text-slate-500'
+                }`}
+              >
+                {p.n}
+              </span>
+              <span
+                className={`text-sm ${
+                  current ? 'font-semibold text-white' : done ? 'text-slate-300' : 'text-slate-500'
+                }`}
+              >
+                {p.label}
+              </span>
+              {current && (
+                <span className="ml-auto rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
+                  in progress
+                </span>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
+function GitHubMark() {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor">
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z" />
+    </svg>
+  )
+}
+
+export function AuthBar() {
+  const queryClient = useQueryClient()
+  const me = useQuery({ queryKey: ['me'], queryFn: fetchMe, retry: false })
+  const [message, setMessage] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function signIn() {
+    setMessage(null)
+    setBusy(true)
+    const result = await githubLoginUrl()
+    if (result.ok) {
+      window.location.href = result.url
+    } else {
+      setMessage(result.message)
+      setBusy(false)
+    }
+  }
+
+  async function signOut() {
+    await logout()
+    await queryClient.invalidateQueries({ queryKey: ['me'] })
+  }
+
+  if (me.data) {
+    return (
+      <div className="flex items-center gap-3">
+        {me.data.avatar_url && (
+          <img src={me.data.avatar_url} alt="" className="h-8 w-8 rounded-full ring-1 ring-white/20" />
+        )}
+        <span className="hidden text-sm font-medium text-slate-200 sm:inline">@{me.data.login}</span>
+        <button
+          type="button"
+          onClick={signOut}
+          className="rounded-lg border border-white/10 px-2.5 py-1 text-xs text-slate-300 transition hover:border-white/25 hover:text-white"
+        >
+          Sign out
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      <button
+        type="button"
+        onClick={signIn}
+        disabled={busy}
+        className="inline-flex items-center gap-2 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-200 disabled:opacity-60"
+      >
+        <GitHubMark />
+        {busy ? 'Redirecting…' : 'Sign in with GitHub'}
+      </button>
+      {message && <p className="max-w-xs text-right text-xs text-amber-300/90">{message}</p>}
+    </div>
+  )
+}
+
+export function SearchCard() {
+  const repos = useQuery({ queryKey: ['repositories'], queryFn: fetchRepositories, retry: false })
+  const [repoId, setRepoId] = useState('')
+  const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    if (!repoId && repos.data && repos.data.length > 0) {
+      setRepoId(repos.data[0].id)
+    }
+  }, [repos.data, repoId])
+
+  const search = useMutation({ mutationFn: () => searchCode(repoId, query.trim()) })
+  const canSearch = repoId !== '' && query.trim() !== '' && !search.isPending
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (canSearch) search.mutate()
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Semantic code search
+        </p>
+        <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
+          Phase 5
+        </span>
+      </div>
+
+      {repos.isError ? (
+        <p className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-200">
+          Sign in with GitHub to search your indexed repositories.
+        </p>
+      ) : repos.data && repos.data.length === 0 ? (
+        <p className="rounded-lg bg-white/[0.02] p-3 text-sm text-slate-300">
+          No connected repositories yet. Connect and index a repo, then search it here.
+        </p>
+      ) : (
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <select
+              value={repoId}
+              onChange={(e) => setRepoId(e.target.value)}
+              disabled={repos.isPending}
+              className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-indigo-400/60 sm:w-56"
+            >
+              {repos.isPending && <option>Loading repos…</option>}
+              {repos.data?.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.full_name}
+                  {r.index_status !== 'indexed' ? ` (${r.index_status})` : ''}
+                </option>
+              ))}
+            </select>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="where is JWT auth implemented?"
+              className="flex-1 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none transition focus:border-indigo-400/60"
+            />
+            <button
+              type="submit"
+              disabled={!canSearch}
+              className="rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+            >
+              {search.isPending ? 'Searching…' : 'Search'}
+            </button>
+          </div>
+
+          {search.isError && (
+            <p className="rounded-lg bg-rose-500/10 p-3 text-sm text-rose-200">
+              {(search.error as Error).message}
+            </p>
+          )}
+
+          {search.data && search.data.results.length === 0 && (
+            <p className="rounded-lg bg-white/[0.02] p-3 text-sm text-slate-400">
+              No matches. Make sure the selected repository has finished indexing.
+            </p>
+          )}
+
+          {search.data && search.data.results.length > 0 && (
+            <ul className="mt-1 space-y-3">
+              {search.data.results.map((r, i) => (
+                <li
+                  key={`${r.file_path}:${r.start_line}:${i}`}
+                  className="rounded-xl border border-white/10 bg-white/[0.02] p-3"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <span className="truncate font-mono text-xs text-indigo-300">
+                      {r.file_path}
+                      <span className="text-slate-500">
+                        :{r.start_line}-{r.end_line}
+                      </span>
+                    </span>
+                    <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">
+                      {(r.score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <pre className="max-h-40 overflow-auto rounded-lg bg-slate-950/60 p-3 text-xs leading-relaxed text-slate-300">
+                    <code>{r.content}</code>
+                  </pre>
+                </li>
+              ))}
+            </ul>
+          )}
+        </form>
+      )}
+    </div>
+  )
+}
+
+const SEVERITY_STYLE: Record<string, string> = {
+  critical: 'bg-rose-500/15 text-rose-300 ring-rose-500/30',
+  high: 'bg-orange-500/15 text-orange-300 ring-orange-500/30',
+  medium: 'bg-amber-500/15 text-amber-300 ring-amber-500/30',
+  low: 'bg-sky-500/15 text-sky-300 ring-sky-500/30',
+}
+
+export function ScoreBar({ label, value }: { label: string; value: number | null }) {
+  const v = value ?? 0
+  const tone = v >= 80 ? 'bg-emerald-400' : v >= 50 ? 'bg-amber-400' : 'bg-rose-400'
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs">
+        <span className="text-slate-400">{label}</span>
+        <span className="font-medium text-slate-200">{value ?? '—'}</span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        <div className={`h-full rounded-full ${tone}`} style={{ width: `${v}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function ReviewResult({ review }: { review: ReviewOut }) {
+  return (
+    <div className="mt-2 space-y-4">
+      {review.summary && (
+        <p className="rounded-lg bg-white/[0.02] p-3 text-sm text-slate-300">{review.summary}</p>
+      )}
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
+        <ScoreBar label="Quality" value={review.quality_score} />
+        <ScoreBar label="Security" value={review.security_score} />
+        <ScoreBar label="Complexity" value={review.complexity_score} />
+        <ScoreBar label="Maintainability" value={review.maintainability_score} />
+        <ScoreBar label="Performance" value={review.performance_score} />
+      </div>
+
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+          {review.findings.length} finding{review.findings.length === 1 ? '' : 's'}
+        </p>
+        <ul className="space-y-3">
+          {review.findings.map((f) => (
+            <li key={f.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+              <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${
+                    SEVERITY_STYLE[f.severity] ?? SEVERITY_STYLE.low
+                  }`}
+                >
+                  {f.severity}
+                </span>
+                <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs capitalize text-slate-300">
+                  {f.category.replace('_', ' ')}
+                </span>
+                <span className="truncate font-mono text-xs text-indigo-300">
+                  {f.file_path}
+                  {f.line_start != null && <span className="text-slate-500">:{f.line_start}</span>}
+                </span>
+              </div>
+              <p className="text-sm font-medium text-slate-100">{f.title}</p>
+              <p className="mt-1 text-sm text-slate-400">{f.rationale}</p>
+              {f.suggestion && (
+                <p className="mt-2 rounded-lg bg-emerald-500/5 p-2 text-xs text-emerald-200">
+                  Fix: {f.suggestion}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+export function ReviewCard() {
+  const repos = useQuery({ queryKey: ['repositories'], queryFn: fetchRepositories, retry: false })
+  const [repoId, setRepoId] = useState('')
+  const [pull, setPull] = useState('')
+  const [ids, setIds] = useState<{ reviewId: string; jobId: string } | null>(null)
+
+  useEffect(() => {
+    if (!repoId && repos.data && repos.data.length > 0) {
+      setRepoId(repos.data[0].id)
+    }
+  }, [repos.data, repoId])
+
+  const trigger = useMutation({
+    mutationFn: () => triggerReview(repoId, Number(pull)),
+    onSuccess: (d) => setIds({ reviewId: d.review_id, jobId: d.job_id }),
+  })
+
+  const job = useQuery({
+    queryKey: ['review-job', ids?.jobId],
+    queryFn: () => fetchJob(ids!.jobId),
+    enabled: !!ids,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status
+      return s === 'succeeded' || s === 'failed' ? false : 1500
+    },
+  })
+  const succeeded = job.data?.status === 'succeeded'
+  const review = useQuery({
+    queryKey: ['review', ids?.reviewId],
+    queryFn: () => fetchReview(ids!.reviewId),
+    enabled: !!ids && succeeded,
+  })
+
+  const canRun = repoId !== '' && Number(pull) >= 1 && !trigger.isPending
+  const working = !!ids && !succeeded && job.data?.status !== 'failed'
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (canRun) trigger.mutate()
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          AI pull-request review
+        </p>
+        <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
+          Phase 6
+        </span>
+      </div>
+
+      {repos.isError ? (
+        <p className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-200">
+          Sign in with GitHub to review your pull requests.
+        </p>
+      ) : (
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <select
+              value={repoId}
+              onChange={(e) => setRepoId(e.target.value)}
+              disabled={repos.isPending}
+              className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-indigo-400/60 sm:w-56"
+            >
+              {repos.isPending && <option>Loading repos…</option>}
+              {repos.data?.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.full_name}
+                </option>
+              ))}
+            </select>
+            <input
+              value={pull}
+              onChange={(e) => setPull(e.target.value.replace(/\D/g, ''))}
+              inputMode="numeric"
+              placeholder="PR number, e.g. 42"
+              className="flex-1 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none transition focus:border-indigo-400/60"
+            />
+            <button
+              type="submit"
+              disabled={!canRun}
+              className="rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+            >
+              {trigger.isPending ? 'Starting…' : 'Review PR'}
+            </button>
+          </div>
+
+          {trigger.isError && (
+            <p className="rounded-lg bg-rose-500/10 p-3 text-sm text-rose-200">
+              {(trigger.error as Error).message}
+            </p>
+          )}
+
+          {working && (
+            <p className="flex items-center gap-2 rounded-lg bg-white/[0.02] p-3 text-sm text-slate-300">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
+              {job.data?.status === 'running' ? 'Analyzing the diff with RAG + LLM…' : 'Queued…'}
+            </p>
+          )}
+
+          {job.data?.status === 'failed' && (
+            <p className="rounded-lg bg-rose-500/10 p-3 text-sm text-rose-200">
+              Review failed: {job.data.error ?? 'unknown error'}
+            </p>
+          )}
+
+          {succeeded && review.data && <ReviewResult review={review.data} />}
+        </form>
+      )}
+    </div>
+  )
+}
+
+export function AskCard() {
+  const repos = useQuery({ queryKey: ['repositories'], queryFn: fetchRepositories, retry: false })
+  const [repoId, setRepoId] = useState('')
+  const [question, setQuestion] = useState('')
+
+  useEffect(() => {
+    if (!repoId && repos.data && repos.data.length > 0) {
+      setRepoId(repos.data[0].id)
+    }
+  }, [repos.data, repoId])
+
+  const ask = useMutation({ mutationFn: () => askQuestion(repoId, question.trim()) })
+  const canAsk = repoId !== '' && question.trim() !== '' && !ask.isPending
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (canAsk) ask.mutate()
+  }
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Ask AI about your code
+        </p>
+        <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-xs font-medium text-indigo-300 ring-1 ring-inset ring-indigo-500/30">
+          Phase 7
+        </span>
+      </div>
+
+      {repos.isError ? (
+        <p className="rounded-lg bg-amber-500/10 p-3 text-sm text-amber-200">
+          Sign in with GitHub to ask questions about your indexed repositories.
+        </p>
+      ) : (
+        <form onSubmit={onSubmit} className="flex flex-col gap-3">
+          <select
+            value={repoId}
+            onChange={(e) => setRepoId(e.target.value)}
+            disabled={repos.isPending}
+            className="rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-indigo-400/60 sm:w-56"
+          >
+            {repos.isPending && <option>Loading repos…</option>}
+            {repos.data?.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.full_name}
+              </option>
+            ))}
+          </select>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="What tests should I write for the auth module?"
+              className="flex-1 rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none transition focus:border-indigo-400/60"
+            />
+            <button
+              type="submit"
+              disabled={!canAsk}
+              className="rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+            >
+              {ask.isPending ? 'Thinking…' : 'Ask'}
+            </button>
+          </div>
+
+          {ask.isError && (
+            <p className="rounded-lg bg-rose-500/10 p-3 text-sm text-rose-200">
+              {(ask.error as Error).message}
+            </p>
+          )}
+
+          {ask.data && (
+            <div className="mt-1 space-y-3">
+              <p className="whitespace-pre-wrap rounded-lg bg-white/[0.02] p-3 text-sm text-slate-200">
+                {ask.data.answer}
+              </p>
+              {ask.data.sources.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Grounded in
+                  </p>
+                  <ul className="flex flex-wrap gap-2">
+                    {ask.data.sources.map((s, i) => (
+                      <li
+                        key={`${s.file_path}:${s.start_line}:${i}`}
+                        className="rounded-lg bg-white/5 px-2 py-1 font-mono text-xs text-indigo-300"
+                      >
+                        {s.file_path}
+                        <span className="text-slate-500">
+                          :{s.start_line}-{s.end_line}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </form>
+      )}
+    </div>
+  )
+}

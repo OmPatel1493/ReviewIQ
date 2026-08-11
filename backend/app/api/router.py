@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.v1 import health, jobs
+from app.modules.analytics import router as analytics
 from app.modules.ask import router as ask
 from app.modules.auth import router as auth
 from app.modules.github import router as github
@@ -39,3 +40,6 @@ api_router.include_router(review.router, prefix="/reviews", tags=["reviews"])
 
 # --- Phase 7 ---
 api_router.include_router(ask.router, prefix="/ask", tags=["ask"])
+
+# --- Phase 8 ---
+api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
