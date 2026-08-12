@@ -7,7 +7,7 @@ import json
 import httpx
 import pytest
 
-from app.modules.ai.llm import LLMError, OllamaProvider
+from app.modules.ai.llm import LLMError, OllamaProvider, OpenAICompatibleProvider
 
 
 def _provider(handler: object) -> OllamaProvider:
@@ -59,3 +59,49 @@ async def test_generate_json_raises_on_empty_content() -> None:
 
     with pytest.raises(LLMError):
         await _provider(handler).generate_json("s", "u")
+
+
+# ------------------------------------------- OpenAI-compatible (Groq etc.) ---
+def _openai(handler: object) -> OpenAICompatibleProvider:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))  # type: ignore[arg-type]
+    return OpenAICompatibleProvider(
+        "https://api.groq.com/openai/v1", "test-key", "llama-3.3-70b", client=client
+    )
+
+
+async def test_openai_generate_json_hits_chat_completions_with_json_mode() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["auth"] = request.headers.get("authorization")
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"ok": true}'}}]})
+
+    out = await _openai(handler).generate_json("system", "user")
+
+    assert out == '{"ok": true}'
+    assert seen["path"].endswith("/chat/completions")
+    assert seen["auth"] == "Bearer test-key"
+    assert seen["body"]["response_format"] == {"type": "json_object"}
+
+
+async def test_openai_generate_text_omits_response_format() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "hello"}}]})
+
+    out = await _openai(handler).generate_text("system", "user")
+
+    assert out == "hello"
+    assert "response_format" not in seen["body"]
+
+
+async def test_openai_raises_on_error_status() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, text="invalid api key")
+
+    with pytest.raises(LLMError):
+        await _openai(handler).generate_text("s", "u")

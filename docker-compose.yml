@@ -11,7 +11,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-reviewiq}
       POSTGRES_DB: ${POSTGRES_DB:-reviewiq}
     ports:
-      - "5432:5432"
+      # Host port is configurable (set POSTGRES_HOST_PORT in .env) to avoid clashing
+      # with a native Postgres already on 5432. Container port stays 5432.
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -47,6 +49,9 @@ services:
     # In-container hostnames override the localhost defaults from .env.
     environment:
       POSTGRES_HOST: db
+      # Inside the compose network the DB always listens on 5432, regardless of the
+      # host-side POSTGRES_PORT a developer may set for local (non-Docker) runs.
+      POSTGRES_PORT: "5432"
       REDIS_HOST: redis
       QDRANT_HOST: qdrant
       OLLAMA_BASE_URL: http://host.docker.internal:11434
@@ -67,6 +72,9 @@ services:
     env_file: .env
     environment:
       POSTGRES_HOST: db
+      # Inside the compose network the DB always listens on 5432, regardless of the
+      # host-side POSTGRES_PORT a developer may set for local (non-Docker) runs.
+      POSTGRES_PORT: "5432"
       REDIS_HOST: redis
       QDRANT_HOST: qdrant
       OLLAMA_BASE_URL: http://host.docker.internal:11434
