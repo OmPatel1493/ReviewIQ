@@ -6,7 +6,7 @@ FRONTEND := frontend
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-api install-web dev-api dev-web worker review test lint fmt \
+.PHONY: help install install-api install-web infra dev dev-api dev-web worker review test lint fmt \
         up down logs build ps clean
 
 help: ## Show this help
@@ -20,6 +20,18 @@ install-api: ## Sync backend Python deps (uv)
 
 install-web: ## Install frontend node deps (npm)
 	cd $(FRONTEND) && npm install
+
+infra: ## Start ONLY the data services (Postgres + Redis + Qdrant) for local dev
+	docker compose up -d db redis qdrant
+
+dev: infra ## Data services + API + worker + frontend together (Ctrl-C stops all). Ollama app must be running for review/ask.
+	@echo "▶ API :8000 · worker · frontend :5173 — Ctrl-C stops all three."
+	@echo "  (review/ask also need the Ollama app running)"
+	@trap 'kill 0' INT TERM; \
+	( cd $(BACKEND) && uv run uvicorn app.main:app --reload --port 8000 ) & \
+	( cd $(BACKEND) && uv run celery -A app.workers.celery_app worker --loglevel=info ) & \
+	( cd $(FRONTEND) && npm run dev ) & \
+	wait
 
 dev-api: ## Run FastAPI with autoreload on :8000
 	cd $(BACKEND) && uv run uvicorn app.main:app --reload --port 8000

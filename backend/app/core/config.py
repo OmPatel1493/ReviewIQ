@@ -114,6 +114,9 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen2.5-coder:7b"
     OPENAI_API_KEY: str = ""
+    # OpenAI-compatible base URL. Swap to a free hosted API when deployed (Ollama can't
+    # run on free tiers) — e.g. Groq: https://api.groq.com/openai/v1
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_MODEL: str = "gpt-4o-mini"
 
     EMBEDDING_PROVIDER: Literal["local", "openai"] = "local"

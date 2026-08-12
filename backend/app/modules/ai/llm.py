@@ -94,12 +94,82 @@ class OllamaProvider:
         return content
 
 
+class OpenAICompatibleProvider:
+    """Chat completion via any OpenAI-compatible API (OpenAI, Groq, OpenRouter, Together).
+
+    This is the deploy path: a 7B local model can't run on free hosting, so point
+    `AI_PROVIDER=openai` at a free hosted endpoint (e.g. Groq) with a base URL + key +
+    model. An `httpx.AsyncClient` can be injected for tests.
+    """
+
+    provider_name = "openai"
+
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
+        self.model = model
+        self._base = base_url.rstrip("/")
+        self._api_key = api_key
+        self._client = client
+
+    async def generate_json(self, system_prompt: str, user_prompt: str) -> str:
+        return await self._chat(system_prompt, user_prompt, json_mode=True)
+
+    async def generate_text(self, system_prompt: str, user_prompt: str) -> str:
+        return await self._chat(system_prompt, user_prompt, json_mode=False)
+
+    async def _chat(
+        self, system_prompt: str, user_prompt: str, *, json_mode: bool
+    ) -> str:
+        payload: dict = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.1,
+            "stream": False,
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        url = f"{self._base}/chat/completions"
+        try:
+            if self._client is not None:
+                resp = await self._client.post(url, json=payload, headers=headers)
+            else:
+                async with httpx.AsyncClient(
+                    timeout=settings.REVIEW_TIMEOUT_SECONDS
+                ) as client:
+                    resp = await client.post(url, json=payload, headers=headers)
+        except httpx.HTTPError as exc:
+            raise LLMError(f"Could not reach the LLM API at {self._base}: {exc}") from exc
+
+        if resp.status_code >= 400:
+            raise LLMError(f"LLM API returned {resp.status_code}: {resp.text[:500]}")
+
+        choices = resp.json().get("choices", [])
+        content = choices[0].get("message", {}).get("content", "") if choices else ""
+        if not content:
+            raise LLMError("LLM API returned an empty response.")
+        return content
+
+
 @lru_cache
 def get_llm_provider() -> LLMProvider:
     """Process-wide singleton LLM provider selected by `AI_PROVIDER`."""
     if settings.AI_PROVIDER == "openai":
-        raise NotImplementedError(
-            "OpenAI chat is pluggable but not wired (local-first). "
-            "Set AI_PROVIDER=ollama and run Ollama locally."
+        if not settings.OPENAI_API_KEY:
+            raise NotImplementedError(
+                "AI_PROVIDER=openai needs OPENAI_API_KEY (+ OPENAI_BASE_URL / OPENAI_MODEL). "
+                "For a free hosted LLM, use Groq: OPENAI_BASE_URL=https://api.groq.com/openai/v1"
+            )
+        return OpenAICompatibleProvider(
+            settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY, settings.OPENAI_MODEL
         )
     return OllamaProvider(settings.OLLAMA_BASE_URL, settings.OLLAMA_MODEL)
